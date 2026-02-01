@@ -14,14 +14,12 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700;900&display=swap" rel="stylesheet">
     
-    <!-- 使用 UMD 提高在 GitHub Pages 上的穩定性 -->
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
-        :root { color-scheme: light; } /* 強制淺色模式，有助於解決 input 顏色問題 */
-        
+        :root { color-scheme: light; }
         body {
             font-family: 'Noto Sans HK', sans-serif;
             background-color: #f8fafc;
@@ -41,8 +39,8 @@
             flex-direction: column;
             align-items: center;
             justify-content: center;
-            background: white;
-            z-index: 100;
+            background: #ffffff;
+            z-index: 9999;
             transition: opacity 0.5s ease;
         }
         .spinner {
@@ -54,35 +52,44 @@
             animation: spin 1s linear infinite;
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        
         .hide-scrollbar::-webkit-scrollbar { display: none; }
-        .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
+        /* 終極強制樣式 */
+        input {
+            background: #ffffff !important;
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            -webkit-text-fill-color: #000000 !important;
+            opacity: 1 !important;
+        }
         .receipt-paper {
             background-image: radial-gradient(#e2e8f0 1.5px, transparent 1.5px);
             background-size: 15px 15px;
             background-color: #fcfcfc;
         }
-
-        /* 終極強制白底黑字樣式 */
-        input[type="text"], input[type="number"] {
-            background-color: #ffffff !important;
-            color: #000000 !important;
-            -webkit-text-fill-color: #000000 !important; /* iOS 修正 */
-            opacity: 1 !important;
-            border: none;
-            outline: none;
-        }
     </style>
 </head>
 <body>
-    <!-- 加載屏 -->
     <div id="loading-screen">
         <div class="spinner"></div>
         <p style="margin-top: 1rem; color: #64748b; font-weight: bold;">壽司郎計數機載入中...</p>
+        <p style="margin-top: 0.5rem; color: #94a3b8; font-size: 10px;">如果長時間沒反應，請刷新頁面</p>
     </div>
 
     <div id="root"></div>
+
+    <!-- 標準 JS 保險機制：放在 Babel 之外 -->
+    <script>
+        window.hideLoader = function() {
+            var loader = document.getElementById('loading-screen');
+            if (loader) {
+                loader.style.opacity = '0';
+                setTimeout(function() { if(loader.parentNode) loader.parentNode.removeChild(loader); }, 500);
+            }
+        };
+        // 4秒後強制關閉加載屏，防止 Babel 解析失敗導致卡死
+        setTimeout(window.hideLoader, 4000);
+    </script>
 
     <script type="text/babel">
         const { useState, useMemo, useEffect } = React;
@@ -95,15 +102,10 @@
         ];
 
         const OTHER_ITEMS = [
-          { id: 's12', name: '小食 $12', price: 12 },
-          { id: 's17', name: '小食 $17', price: 17 },
-          { id: 's22', name: '小食 $22', price: 22 },
-          { id: 's27', name: '小食 $27', price: 27 },
-          { id: 's32', name: '特選 $32', price: 32 },
-          { id: 's37', name: '特選 $37', price: 37 }
+          { id: 's12', name: '小食 $12', price: 12 }, { id: 's17', name: '小食 $17', price: 17 },
+          { id: 's22', name: '小食 $22', price: 22 }, { id: 's27', name: '小食 $27', price: 27 },
+          { id: 's32', name: '特選 $32', price: 32 }, { id: 's37', name: '特選 $37', price: 37 }
         ];
-
-        const ALL_ITEMS = [...PLATES, ...OTHER_ITEMS];
 
         const PlateCounter = ({ plate, count, onIncrement, onDecrement }) => (
           <div className={`flex flex-col items-center p-4 rounded-2xl shadow-sm border-2 ${plate.borderColor} ${plate.bgColor} transition-all active:scale-95`}>
@@ -119,82 +121,67 @@
 
         const App = () => {
           const [members, setMembers] = useState(() => {
-            const saved = localStorage.getItem('sushiro_split_v3');
-            if (saved) {
-              try { return JSON.parse(saved); } catch(e) { return [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }]; }
+            try {
+              const saved = localStorage.getItem('sushiro_split_v3');
+              return saved ? JSON.parse(saved) : [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }];
+            } catch (e) {
+              return [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }];
             }
-            return [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }];
           });
           
           const [activeMemberId, setActiveMemberId] = useState(members[0].id);
           const [hasServiceCharge, setHasServiceCharge] = useState(true);
           const [showReceipt, setShowReceipt] = useState(false);
-          const [splitEqually, setSplitEqually] = useState(false);
           const [copyFeedback, setCopyFeedback] = useState(false);
 
           useEffect(() => {
-            localStorage.setItem('sushiro_split_v3', JSON.stringify(members));
+            try { localStorage.setItem('sushiro_split_v3', JSON.stringify(members)); } catch(e) {}
           }, [members]);
 
-          // React 載入完成後隱藏加載屏
           useEffect(() => {
-            const loader = document.getElementById('loading-screen');
-            if (loader) {
-              loader.style.opacity = '0';
-              setTimeout(() => loader.remove(), 500);
-            }
+            if (window.hideLoader) window.hideLoader();
           }, []);
 
-          const getMemberStats = (member) => {
-            if (!member) return { subtotal: 0, service: 0, total: 0, plateCount: 0, items: [] };
-            let subtotal = 0;
-            let plateCount = 0;
+          const getStats = (m) => {
+            let sub = 0, plates = 0;
             const items = [];
-            ALL_ITEMS.forEach(item => {
-              const count = member.order[item.id] || 0;
-              if (count > 0) {
-                subtotal += count * item.price;
-                plateCount += count;
-                items.push({ ...item, count });
-              }
+            [...PLATES, ...OTHER_ITEMS].forEach(it => {
+              const c = m.order[it.id] || 0;
+              if (c > 0) { sub += c * it.price; plates += c; items.push({...it, count: c}); }
             });
-            if (member.customAmount) {
-              subtotal += member.customAmount;
-              items.push({ id: 'custom', name: member.customAmount > 0 ? '手動加收' : '手動扣減', price: Math.abs(member.customAmount), count: 1, isCustom: true });
+            if (m.customAmount) {
+              sub += m.customAmount;
+              items.push({ id: 'c', name: m.customAmount > 0 ? '手動加收' : '手動扣減', price: Math.abs(m.customAmount), count: 1, isCustom: true });
             }
-            const service = hasServiceCharge ? Math.round(subtotal * 0.1) : 0;
-            return { subtotal, service, total: subtotal + service, plateCount, items };
+            const svc = hasServiceCharge ? Math.round(sub * 0.1) : 0;
+            return { total: sub + svc, service: svc, plates, items };
           };
 
           const totals = useMemo(() => {
-            let grandTotal = 0;
-            let grandPlates = 0;
-            const breakdowns = members.map(m => {
-              const stats = getMemberStats(m);
-              grandTotal += stats.total;
-              grandPlates += stats.plateCount;
-              return { ...m, ...stats };
+            let gTotal = 0, gPlates = 0;
+            const b = members.map(m => {
+              const s = getStats(m); gTotal += s.total; gPlates += s.plates;
+              return { ...m, ...s };
             });
-            const perPerson = members.length > 0 ? Math.ceil(grandTotal / members.length) : 0;
-            return { grandTotal, grandPlates, breakdowns, perPerson };
+            return { gTotal, gPlates, b };
           }, [members, hasServiceCharge]);
 
-          const activeMember = members.find(m => m.id === activeMemberId);
+          const activeMember = members.find(m => m.id === activeMemberId) || members[0];
 
           return (
             <div className="max-w-md mx-auto min-h-screen flex flex-col bg-slate-50 pb-32">
               <header className="sushiro-red text-white p-6 sticky top-0 z-40 shadow-md">
                 <div className="flex justify-between items-center mb-4">
                   <h1 className="text-2xl font-black italic">SUSHIRO</h1>
-                  <button onClick={() => { if(confirm('重設所有數據？')) setMembers([{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }]); }} className="text-xs bg-black/20 px-3 py-1.5 rounded-full border border-white/30">重設</button>
+                  <button onClick={() => { if(confirm('重設？')) setMembers([{id:'m1', name:'成員 1', order:{}, customAmount:0}]); }} className="text-xs bg-black/20 px-3 py-1.5 rounded-full">重設</button>
                 </div>
                 <div className="flex justify-between items-end">
                   <div>
-                    <p className="text-red-100 text-[10px] uppercase font-bold tracking-widest">Grand Total</p>
-                    <p className="text-5xl font-black font-mono">${totals.grandTotal}</p>
+                    <p className="text-red-100 text-[10px] uppercase font-bold">Grand Total</p>
+                    <p className="text-5xl font-black font-mono">${totals.gTotal}</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-red-100 text-xs font-bold">{totals.grandPlates} 碟</p>
+                    <p className="text-red-100 text-xs font-bold">{totals.gPlates} 碟</p>
                     <p className="text-xs opacity-70">共 {members.length} 人</p>
                   </div>
                 </div>
@@ -207,56 +194,48 @@
                   </button>
                 ))}
                 <button onClick={() => {
-                  const newId = `m${Date.now()}`;
-                  setMembers([...members, { id: newId, name: `成員 ${members.length + 1}`, order: {}, customAmount: 0 }]);
-                  setActiveMemberId(newId);
+                  const id = `m${Date.now()}`;
+                  setMembers([...members, { id, name: `成員 ${members.length+1}`, order:{}, customAmount:0 }]);
+                  setActiveMemberId(id);
                 }} className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold">+</button>
               </div>
 
               <main className="flex-1 p-4 space-y-6">
-                {/* 名稱輸入框：確保背景始終為白色 */}
                 <div className="flex items-center space-x-2 bg-white p-4 rounded-2xl shadow-sm border-2 border-slate-900">
                   <span className="text-xs font-black text-slate-900 uppercase">Name:</span>
-                  <input 
-                    type="text" 
-                    value={activeMember?.name || ''} 
-                    onChange={(e) => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, name: e.target.value } : m))}
-                    className="flex-1 font-black text-lg bg-white"
-                  />
-                  <span className="text-sushiro font-mono font-black text-xl">${getMemberStats(activeMember).total}</span>
+                  <input type="text" value={activeMember.name} 
+                    onChange={e => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, name: e.target.value} : m))}
+                    className="flex-1 font-black text-lg outline-none" style={{background:'white'}} />
+                  <span className="text-sushiro font-mono font-black text-xl">${getStats(activeMember).total}</span>
                 </div>
 
                 <section className="grid grid-cols-2 gap-4">
                   {PLATES.map(p => (
-                    <PlateCounter key={p.id} plate={p} count={activeMember?.order[p.id] || 0}
-                      onIncrement={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [p.id]: (m.order[p.id] || 0) + 1 } } : m))}
-                      onDecrement={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [p.id]: Math.max(0, (m.order[p.id] || 0) - 1) } } : m))}
+                    <PlateCounter key={p.id} plate={p} count={activeMember.order[p.id] || 0}
+                      onIncrement={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [p.id]: (m.order[p.id]||0)+1}} : m))}
+                      onDecrement={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [p.id]: Math.max(0,(m.order[p.id]||0)-1)}} : m))}
                     />
                   ))}
                 </section>
 
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
-                  <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center"><span className="w-1.5 h-6 sushiro-red rounded-full mr-2"></span>小食/手動</h2>
+                  <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center"><span className="w-1.5 h-6 sushiro-red rounded-full mr-2"></span>其他/調整</h2>
                   <div className="space-y-4">
-                    {OTHER_ITEMS.map(item => (
-                      <div key={item.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl">
-                        <span className="font-bold text-slate-700 text-sm">{item.name}</span>
+                    {OTHER_ITEMS.map(it => (
+                      <div key={it.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl">
+                        <span className="font-bold text-slate-700 text-sm">{it.name}</span>
                         <div className="flex items-center space-x-3">
-                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [item.id]: Math.max(0, (m.order[item.id] || 0) - 1) } } : m))} className="w-8 h-8 border border-slate-300 rounded-full text-slate-400 font-bold">-</button>
-                          <span className="font-mono font-bold">{activeMember?.order[item.id] || 0}</span>
-                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [item.id]: (m.order[item.id] || 0) + 1 } } : m))} className="w-8 h-8 border border-slate-300 rounded-full text-slate-400 font-bold">+</button>
+                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [it.id]: Math.max(0,(m.order[it.id]||0)-1)}} : m))} className="w-8 h-8 border border-slate-300 rounded-full">-</button>
+                          <span className="font-mono font-bold">{activeMember.order[it.id] || 0}</span>
+                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [it.id]: (m.order[it.id]||0)+1}} : m))} className="w-8 h-8 border border-slate-300 rounded-full">+</button>
                         </div>
                       </div>
                     ))}
                     <div className="flex items-center justify-between p-3 bg-white border-2 border-dashed border-slate-200 rounded-2xl">
-                      <span className="font-black text-slate-900 text-xs">手動調整 ($)</span>
-                      <input 
-                        type="number" 
-                        value={activeMember?.customAmount || ''} 
-                        onChange={(e) => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, customAmount: parseFloat(e.target.value) || 0 } : m))}
-                        placeholder="0"
-                        className="w-20 px-2 py-1 bg-white text-right font-mono font-black border border-slate-100 rounded-lg"
-                      />
+                      <span className="font-black text-slate-900 text-xs">手動金額 ($)</span>
+                      <input type="number" value={activeMember.customAmount || ''} 
+                        onChange={e => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, customAmount: parseFloat(e.target.value)||0} : m))}
+                        className="w-20 text-right font-mono font-black" style={{background:'white'}} placeholder="0" />
                     </div>
                   </div>
                 </section>
@@ -270,24 +249,22 @@
                       <button onClick={() => setShowReceipt(false)} className="w-10 h-10 bg-slate-100 rounded-full">✕</button>
                     </div>
                     <div className="flex-1 overflow-y-auto receipt-paper p-4 rounded-xl border border-slate-200">
-                        {totals.breakdowns.map(m => (
+                        {totals.b.map(m => (
                           <div key={m.id} className="mb-4 pb-4 border-b border-dotted border-slate-300">
                             <div className="flex justify-between font-black text-lg"><span>{m.name}</span><span>${m.total}</span></div>
-                            <div className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">
-                              {m.items.map(i => `${i.name}x${i.count}`).join(', ')}
-                            </div>
+                            <div className="text-[10px] text-slate-400 font-bold">{m.items.map(i => `${i.name}x${i.count}`).join(', ')}</div>
                           </div>
                         ))}
-                        <div className="pt-4 flex justify-between text-2xl font-black"><span>TOTAL</span><span>${totals.grandTotal}</span></div>
+                        <div className="pt-4 flex justify-between text-2xl font-black"><span>TOTAL</span><span>${totals.gTotal}</span></div>
                     </div>
                     <button onClick={() => {
-                        let text = "🍣 壽司郎結算單\n----------------\n";
-                        totals.breakdowns.forEach(m => text += `${m.name}: $${m.total}\n`);
-                        text += `----------------\n總額: $${totals.grandTotal}`;
-                        navigator.clipboard.writeText(text);
+                        let t = "🍣 壽司郎結算單\n----------------\n";
+                        totals.b.forEach(m => t += `${m.name}: $${m.total}\n`);
+                        t += `----------------\n總額: $${totals.gTotal}`;
+                        navigator.clipboard.writeText(t);
                         setCopyFeedback(true); setTimeout(()=>setCopyFeedback(false), 2000);
                     }} className={`mt-6 w-full py-4 rounded-2xl font-bold ${copyFeedback ? 'bg-green-500' : 'bg-slate-900'} text-white`}>
-                      {copyFeedback ? '已複製！' : '複製結算備忘'}
+                      {copyFeedback ? '已複製！' : '複製備忘'}
                     </button>
                   </div>
                 </div>
@@ -295,10 +272,10 @@
 
               <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t p-4 shadow-lg z-40 flex justify-between items-center">
                   <div className="flex flex-col">
-                    <div className="flex items-center text-[10px] font-bold text-slate-400 uppercase">
+                    <label className="flex items-center text-[10px] font-bold text-slate-400 uppercase">
                       <input type="checkbox" checked={hasServiceCharge} onChange={e => setHasServiceCharge(e.target.checked)} className="mr-1 accent-sushiro" /> 加一
-                    </div>
-                    <span className="text-3xl font-black text-sushiro font-mono">${totals.grandTotal}</span>
+                    </label>
+                    <span className="text-3xl font-black text-sushiro font-mono">${totals.gTotal}</span>
                   </div>
                   <button onClick={() => setShowReceipt(true)} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold">分單結算</button>
               </footer>
@@ -306,15 +283,13 @@
           );
         };
 
-        // 啟動 React
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-
-        // 保險機制：3秒後無論如何都隱藏加載屏
-        setTimeout(() => {
-          const loader = document.getElementById('loading-screen');
-          if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.remove(), 500); }
-        }, 3000);
+        try {
+          const root = ReactDOM.createRoot(document.getElementById('root'));
+          root.render(<App />);
+        } catch (e) {
+          console.error(e);
+          window.hideLoader();
+        }
     </script>
 </body>
 </html>
