@@ -4,12 +4,11 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-    <title>壽司郎計數機 | 分單版</title>
+    <title>壽司郎計數機 | 分單 + AA</title>
     
     <meta name="theme-color" content="#e11d48">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <link rel="manifest" href="manifest.json">
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700;900&display=swap" rel="stylesheet">
@@ -54,7 +53,6 @@
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .hide-scrollbar::-webkit-scrollbar { display: none; }
 
-        /* 終極強制樣式 */
         input {
             background: #ffffff !important;
             background-color: #ffffff !important;
@@ -73,12 +71,10 @@
     <div id="loading-screen">
         <div class="spinner"></div>
         <p style="margin-top: 1rem; color: #64748b; font-weight: bold;">壽司郎計數機載入中...</p>
-        <p style="margin-top: 0.5rem; color: #94a3b8; font-size: 10px;">如果長時間沒反應，請刷新頁面</p>
     </div>
 
     <div id="root"></div>
 
-    <!-- 標準 JS 保險機制：放在 Babel 之外 -->
     <script>
         window.hideLoader = function() {
             var loader = document.getElementById('loading-screen');
@@ -87,8 +83,7 @@
                 setTimeout(function() { if(loader.parentNode) loader.parentNode.removeChild(loader); }, 500);
             }
         };
-        // 4秒後強制關閉加載屏，防止 Babel 解析失敗導致卡死
-        setTimeout(window.hideLoader, 4000);
+        setTimeout(window.hideLoader, 3500);
     </script>
 
     <script type="text/babel">
@@ -124,23 +119,20 @@
             try {
               const saved = localStorage.getItem('sushiro_split_v3');
               return saved ? JSON.parse(saved) : [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }];
-            } catch (e) {
-              return [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }];
-            }
+            } catch (e) { return [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }]; }
           });
           
           const [activeMemberId, setActiveMemberId] = useState(members[0].id);
           const [hasServiceCharge, setHasServiceCharge] = useState(true);
           const [showReceipt, setShowReceipt] = useState(false);
+          const [splitEqually, setSplitEqually] = useState(false);
           const [copyFeedback, setCopyFeedback] = useState(false);
 
           useEffect(() => {
             try { localStorage.setItem('sushiro_split_v3', JSON.stringify(members)); } catch(e) {}
           }, [members]);
 
-          useEffect(() => {
-            if (window.hideLoader) window.hideLoader();
-          }, []);
+          useEffect(() => { if (window.hideLoader) window.hideLoader(); }, []);
 
           const getStats = (m) => {
             let sub = 0, plates = 0;
@@ -163,7 +155,8 @@
               const s = getStats(m); gTotal += s.total; gPlates += s.plates;
               return { ...m, ...s };
             });
-            return { gTotal, gPlates, b };
+            const perPerson = members.length > 0 ? Math.ceil(gTotal / members.length) : 0;
+            return { gTotal, gPlates, b, perPerson };
           }, [members, hasServiceCharge]);
 
           const activeMember = members.find(m => m.id === activeMemberId) || members[0];
@@ -173,11 +166,11 @@
               <header className="sushiro-red text-white p-6 sticky top-0 z-40 shadow-md">
                 <div className="flex justify-between items-center mb-4">
                   <h1 className="text-2xl font-black italic">SUSHIRO</h1>
-                  <button onClick={() => { if(confirm('重設？')) setMembers([{id:'m1', name:'成員 1', order:{}, customAmount:0}]); }} className="text-xs bg-black/20 px-3 py-1.5 rounded-full">重設</button>
+                  <button onClick={() => { if(confirm('重設所有數據？')) setMembers([{id:'m1', name:'成員 1', order:{}, customAmount:0}]); }} className="text-xs bg-black/20 px-3 py-1.5 rounded-full">重設</button>
                 </div>
                 <div className="flex justify-between items-end">
                   <div>
-                    <p className="text-red-100 text-[10px] uppercase font-bold">Grand Total</p>
+                    <p className="text-red-100 text-[10px] uppercase font-bold tracking-widest">Grand Total</p>
                     <p className="text-5xl font-black font-mono">${totals.gTotal}</p>
                   </div>
                   <div className="text-right">
@@ -225,14 +218,14 @@
                       <div key={it.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl">
                         <span className="font-bold text-slate-700 text-sm">{it.name}</span>
                         <div className="flex items-center space-x-3">
-                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [it.id]: Math.max(0,(m.order[it.id]||0)-1)}} : m))} className="w-8 h-8 border border-slate-300 rounded-full">-</button>
-                          <span className="font-mono font-bold">{activeMember.order[it.id] || 0}</span>
-                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [it.id]: (m.order[it.id]||0)+1}} : m))} className="w-8 h-8 border border-slate-300 rounded-full">+</button>
+                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [it.id]: Math.max(0,(m.order[it.id]||0)-1)}} : m))} className="w-8 h-8 border border-slate-300 rounded-full font-bold">-</button>
+                          <span className="font-mono font-bold w-4 text-center">{activeMember.order[it.id] || 0}</span>
+                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, order: {...m.order, [it.id]: (m.order[it.id]||0)+1}} : m))} className="w-8 h-8 border border-slate-300 rounded-full font-bold">+</button>
                         </div>
                       </div>
                     ))}
                     <div className="flex items-center justify-between p-3 bg-white border-2 border-dashed border-slate-200 rounded-2xl">
-                      <span className="font-black text-slate-900 text-xs">手動金額 ($)</span>
+                      <span className="font-black text-slate-900 text-xs">手動調整金額 ($)</span>
                       <input type="number" value={activeMember.customAmount || ''} 
                         onChange={e => setMembers(prev => prev.map(m => m.id === activeMemberId ? {...m, customAmount: parseFloat(e.target.value)||0} : m))}
                         className="w-20 text-right font-mono font-black" style={{background:'white'}} placeholder="0" />
@@ -243,28 +236,55 @@
 
               {showReceipt && (
                 <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm">
-                  <div className="bg-white w-full max-w-md rounded-t-[2.5rem] p-6 max-h-[90vh] flex flex-col">
-                    <div className="flex justify-between items-center mb-6">
-                      <h3 className="text-2xl font-black">結算單</h3>
+                  <div className="bg-white w-full max-w-md rounded-t-[2.5rem] p-6 max-h-[95vh] flex flex-col">
+                    <div className="flex justify-between items-center mb-4">
+                      <h3 className="text-2xl font-black">分單結算</h3>
                       <button onClick={() => setShowReceipt(false)} className="w-10 h-10 bg-slate-100 rounded-full">✕</button>
                     </div>
-                    <div className="flex-1 overflow-y-auto receipt-paper p-4 rounded-xl border border-slate-200">
-                        {totals.b.map(m => (
-                          <div key={m.id} className="mb-4 pb-4 border-b border-dotted border-slate-300">
-                            <div className="flex justify-between font-black text-lg"><span>{m.name}</span><span>${m.total}</span></div>
-                            <div className="text-[10px] text-slate-400 font-bold">{m.items.map(i => `${i.name}x${i.count}`).join(', ')}</div>
-                          </div>
-                        ))}
-                        <div className="pt-4 flex justify-between text-2xl font-black"><span>TOTAL</span><span>${totals.gTotal}</span></div>
+
+                    <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
+                        <button onClick={() => setSplitEqually(false)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!splitEqually ? 'bg-white shadow-sm text-sushiro' : 'text-slate-500'}`}>個別計算</button>
+                        <button onClick={() => setSplitEqually(true)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${splitEqually ? 'bg-white shadow-sm text-sushiro' : 'text-slate-500'}`}>平均分賬 (AA)</button>
                     </div>
+
+                    <div className="flex-1 overflow-y-auto receipt-paper p-6 rounded-2xl border-2 border-slate-200">
+                        {splitEqually ? (
+                            <div className="text-center py-6">
+                                <p className="text-slate-400 font-bold uppercase text-[10px] tracking-widest mb-1">Each Person Pays</p>
+                                <p className="text-6xl font-black text-sushiro font-mono mb-6">${totals.perPerson}</p>
+                                <div className="h-px bg-slate-200 w-full mb-4"></div>
+                                <div className="flex justify-between text-sm font-bold text-slate-500"><span>總人數</span><span>{members.length} 位</span></div>
+                                <div className="flex justify-between text-sm font-bold text-slate-500"><span>全枱總額</span><span>${totals.gTotal}</span></div>
+                            </div>
+                        ) : (
+                            <div className="space-y-6">
+                                {totals.b.map(m => (
+                                <div key={m.id} className="pb-4 border-b border-dotted border-slate-300 last:border-0">
+                                    <div className="flex justify-between font-black text-lg"><span>{m.name}</span><span>${m.total}</span></div>
+                                    <div className="text-[10px] text-slate-400 font-bold uppercase">
+                                        {m.items.map(i => `${i.name}x${i.count}`).join(', ')}
+                                    </div>
+                                </div>
+                                ))}
+                                <div className="pt-4 border-t-2 border-slate-900 border-dashed flex justify-between text-2xl font-black">
+                                    <span>全枱總額</span><span>${totals.gTotal}</span>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                    
                     <button onClick={() => {
-                        let t = "🍣 壽司郎結算單\n----------------\n";
-                        totals.b.forEach(m => t += `${m.name}: $${m.total}\n`);
+                        let t = `🍣 壽司郎結算 (${splitEqually ? '平均 AA' : '個別計算'})\n----------------\n`;
+                        if (splitEqually) {
+                            t += `每人應付: $${totals.perPerson}\n總人數: ${members.length}\n`;
+                        } else {
+                            totals.b.forEach(m => t += `${m.name}: $${m.total}\n`);
+                        }
                         t += `----------------\n總額: $${totals.gTotal}`;
                         navigator.clipboard.writeText(t);
                         setCopyFeedback(true); setTimeout(()=>setCopyFeedback(false), 2000);
-                    }} className={`mt-6 w-full py-4 rounded-2xl font-bold ${copyFeedback ? 'bg-green-500' : 'bg-slate-900'} text-white`}>
-                      {copyFeedback ? '已複製！' : '複製備忘'}
+                    }} className={`mt-6 w-full py-4 rounded-2xl font-bold transition-all ${copyFeedback ? 'bg-green-500' : 'bg-slate-900'} text-white shadow-lg`}>
+                      {copyFeedback ? '已複製到剪貼簿！' : '複製結算備忘'}
                     </button>
                   </div>
                 </div>
@@ -277,19 +297,14 @@
                     </label>
                     <span className="text-3xl font-black text-sushiro font-mono">${totals.gTotal}</span>
                   </div>
-                  <button onClick={() => setShowReceipt(true)} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold">分單結算</button>
+                  <button onClick={() => setShowReceipt(true)} className="bg-slate-900 text-white px-8 py-4 rounded-2xl font-bold active:scale-95 transition-transform shadow-md">分單結算</button>
               </footer>
             </div>
           );
         };
 
-        try {
-          const root = ReactDOM.createRoot(document.getElementById('root'));
-          root.render(<App />);
-        } catch (e) {
-          console.error(e);
-          window.hideLoader();
-        }
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
     </script>
 </body>
 </html>
