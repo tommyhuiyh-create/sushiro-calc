@@ -13,15 +13,22 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+HK:wght@400;700;900&display=swap" rel="stylesheet">
+    
+    <!-- 使用 UMD 提高在 GitHub Pages 上的穩定性 -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <style>
+        :root { color-scheme: light; } /* 強制淺色模式，有助於解決 input 顏色問題 */
+        
         body {
             font-family: 'Noto Sans HK', sans-serif;
             background-color: #f8fafc;
             margin: 0;
             user-select: none;
             -webkit-tap-highlight-color: transparent;
+            color: #1e293b;
         }
         .sushiro-red { background-color: #e11d48; }
         .text-sushiro { color: #e11d48; }
@@ -36,6 +43,7 @@
             justify-content: center;
             background: white;
             z-index: 100;
+            transition: opacity 0.5s ease;
         }
         .spinner {
             width: 40px;
@@ -47,7 +55,6 @@
         }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         
-        /* 隱藏滾動條但保持滾動功能 */
         .hide-scrollbar::-webkit-scrollbar { display: none; }
         .hide-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
 
@@ -57,34 +64,28 @@
             background-color: #fcfcfc;
         }
 
-        /* 強制輸入框背景為白色，防止某些瀏覽器自動填充或深色模式影響 */
-        input {
-            background-color: white !important;
-            color: black !important;
-            -webkit-appearance: none;
+        /* 終極強制白底黑字樣式 */
+        input[type="text"], input[type="number"] {
+            background-color: #ffffff !important;
+            color: #000000 !important;
+            -webkit-text-fill-color: #000000 !important; /* iOS 修正 */
+            opacity: 1 !important;
+            border: none;
+            outline: none;
         }
     </style>
-
-    <script type="importmap">
-    {
-      "imports": {
-        "react": "https://esm.sh/react@19.0.0",
-        "react-dom/client": "https://esm.sh/react-dom@19.0.0/client"
-      }
-    }
-    </script>
 </head>
 <body>
+    <!-- 加載屏 -->
     <div id="loading-screen">
         <div class="spinner"></div>
-        <p style="margin-top: 1rem; color: #64748b; font-weight: bold;">準備中...</p>
+        <p style="margin-top: 1rem; color: #64748b; font-weight: bold;">壽司郎計數機載入中...</p>
     </div>
 
     <div id="root"></div>
 
-    <script type="text/babel" data-type="module">
-        import React, { useState, useMemo, useEffect } from 'react';
-        import { createRoot } from 'react-dom/client';
+    <script type="text/babel">
+        const { useState, useMemo, useEffect } = React;
 
         const PLATES = [
           { id: 'red', name: '紅碟', price: 12, bgColor: 'bg-red-500', borderColor: 'border-red-700' },
@@ -120,8 +121,7 @@
           const [members, setMembers] = useState(() => {
             const saved = localStorage.getItem('sushiro_split_v3');
             if (saved) {
-              const parsed = JSON.parse(saved);
-              return parsed.map(m => ({ ...m, customAmount: m.customAmount || 0 }));
+              try { return JSON.parse(saved); } catch(e) { return [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }]; }
             }
             return [{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }];
           });
@@ -136,13 +136,20 @@
             localStorage.setItem('sushiro_split_v3', JSON.stringify(members));
           }, [members]);
 
+          // React 載入完成後隱藏加載屏
+          useEffect(() => {
+            const loader = document.getElementById('loading-screen');
+            if (loader) {
+              loader.style.opacity = '0';
+              setTimeout(() => loader.remove(), 500);
+            }
+          }, []);
+
           const getMemberStats = (member) => {
             if (!member) return { subtotal: 0, service: 0, total: 0, plateCount: 0, items: [] };
-            
             let subtotal = 0;
             let plateCount = 0;
             const items = [];
-            
             ALL_ITEMS.forEach(item => {
               const count = member.order[item.id] || 0;
               if (count > 0) {
@@ -151,18 +158,10 @@
                 items.push({ ...item, count });
               }
             });
-
-            if (member.customAmount && member.customAmount !== 0) {
+            if (member.customAmount) {
               subtotal += member.customAmount;
-              items.push({ 
-                id: 'custom', 
-                name: member.customAmount > 0 ? '手動加收' : '手動扣減', 
-                price: Math.abs(member.customAmount), 
-                count: member.customAmount > 0 ? 1 : -1,
-                isCustom: true
-              });
+              items.push({ id: 'custom', name: member.customAmount > 0 ? '手動加收' : '手動扣減', price: Math.abs(member.customAmount), count: 1, isCustom: true });
             }
-            
             const service = hasServiceCharge ? Math.round(subtotal * 0.1) : 0;
             return { subtotal, service, total: subtotal + service, plateCount, items };
           };
@@ -176,56 +175,9 @@
               grandPlates += stats.plateCount;
               return { ...m, ...stats };
             });
-            
             const perPerson = members.length > 0 ? Math.ceil(grandTotal / members.length) : 0;
-
             return { grandTotal, grandPlates, breakdowns, perPerson };
           }, [members, hasServiceCharge]);
-
-          const updateCount = (plateId, delta) => {
-            setMembers(prev => prev.map(m => {
-              if (m.id === activeMemberId) {
-                const currentCount = m.order[plateId] || 0;
-                return { ...m, order: { ...m.order, [plateId]: Math.max(0, currentCount + delta) } };
-              }
-              return m;
-            }));
-          };
-
-          const handleCustomAmountChange = (val) => {
-            setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, customAmount: val } : m));
-          };
-
-          const addMember = () => {
-            const newId = `m${Date.now()}`;
-            setMembers([...members, { id: newId, name: `成員 ${members.length + 1}`, order: {}, customAmount: 0 }]);
-            setActiveMemberId(newId);
-          };
-
-          const removeMember = (id) => {
-            if (members.length === 1) return;
-            const newMembers = members.filter(m => m.id !== id);
-            setMembers(newMembers);
-            if (activeMemberId === id) setActiveMemberId(newMembers[0].id);
-          };
-
-          const handleCopy = () => {
-            let text = `🍣 壽司郎結算單 (${splitEqually ? '平均分賬' : '個別計算'})\n------------------\n`;
-            if (splitEqually) {
-                text += `總額: $${totals.grandTotal}\n人數: ${members.length}\n每人應付: $${totals.perPerson}\n`;
-            } else {
-                totals.breakdowns.forEach(m => {
-                    if (m.total !== 0) {
-                        const itemsStr = m.items.map(i => i.isCustom ? `${i.name}($${m.customAmount})` : `${i.name}x${i.count}`).join(', ');
-                        text += `${m.name}: $${m.total} (${itemsStr})\n`;
-                    }
-                });
-                text += `------------------\n總額: $${totals.grandTotal}\n`;
-            }
-            navigator.clipboard.writeText(text);
-            setCopyFeedback(true);
-            setTimeout(() => setCopyFeedback(false), 2000);
-          };
 
           const activeMember = members.find(m => m.id === activeMemberId);
 
@@ -234,7 +186,7 @@
               <header className="sushiro-red text-white p-6 sticky top-0 z-40 shadow-md">
                 <div className="flex justify-between items-center mb-4">
                   <h1 className="text-2xl font-black italic">SUSHIRO</h1>
-                  <button onClick={() => { if(confirm('重設數據？')) setMembers([{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }]); }} className="text-xs bg-black/20 px-3 py-1.5 rounded-full border border-white/30">重設</button>
+                  <button onClick={() => { if(confirm('重設所有數據？')) setMembers([{ id: 'm1', name: '成員 1', order: {}, customAmount: 0 }]); }} className="text-xs bg-black/20 px-3 py-1.5 rounded-full border border-white/30">重設</button>
                 </div>
                 <div className="flex justify-between items-end">
                   <div>
@@ -248,78 +200,63 @@
                 </div>
               </header>
 
-              <div className="bg-white border-b sticky top-[148px] z-30 shadow-sm">
-                <div className="flex items-center p-2 overflow-x-auto hide-scrollbar">
-                  {members.map(m => (
-                    <button 
-                      key={m.id} 
-                      onClick={() => setActiveMemberId(m.id)}
-                      className={`flex-shrink-0 px-4 py-2 mr-2 text-sm transition-all relative ${activeMemberId === m.id ? 'active-member' : 'text-slate-400 font-bold'}`}
-                    >
-                      {m.name}
-                      {members.length > 1 && activeMemberId === m.id && (
-                        <span onClick={(e) => { e.stopPropagation(); removeMember(m.id); }} className="ml-2 opacity-50 text-xs">✕</span>
-                      )}
-                    </button>
-                  ))}
-                  <button onClick={addMember} className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold">+</button>
-                </div>
+              <div className="bg-white border-b sticky top-[148px] z-30 shadow-sm flex items-center p-2 overflow-x-auto hide-scrollbar">
+                {members.map(m => (
+                  <button key={m.id} onClick={() => setActiveMemberId(m.id)} className={`flex-shrink-0 px-4 py-2 mr-2 text-sm transition-all ${activeMemberId === m.id ? 'active-member' : 'text-slate-400 font-bold'}`}>
+                    {m.name}
+                  </button>
+                ))}
+                <button onClick={() => {
+                  const newId = `m${Date.now()}`;
+                  setMembers([...members, { id: newId, name: `成員 ${members.length + 1}`, order: {}, customAmount: 0 }]);
+                  setActiveMemberId(newId);
+                }} className="flex-shrink-0 w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center font-bold">+</button>
               </div>
 
               <main className="flex-1 p-4 space-y-6">
-                {/* 修正成員名稱輸入框為純白背景與黑字 */}
-                <div className="flex items-center space-x-2 bg-white p-4 rounded-2xl shadow-sm border-2 border-slate-900 overflow-hidden">
-                  <span className="text-xs font-black text-slate-900 uppercase tracking-tighter whitespace-nowrap">Name:</span>
+                {/* 名稱輸入框：確保背景始終為白色 */}
+                <div className="flex items-center space-x-2 bg-white p-4 rounded-2xl shadow-sm border-2 border-slate-900">
+                  <span className="text-xs font-black text-slate-900 uppercase">Name:</span>
                   <input 
                     type="text" 
                     value={activeMember?.name || ''} 
                     onChange={(e) => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, name: e.target.value } : m))}
-                    placeholder="輸入成員名稱"
-                    className="flex-1 font-black text-black text-lg outline-none bg-white placeholder:text-slate-300 min-w-0"
-                    style={{ backgroundColor: 'white' }}
+                    className="flex-1 font-black text-lg bg-white"
                   />
-                  <div className="h-6 w-px bg-slate-200 mx-2 flex-shrink-0"></div>
-                  <span className="text-sushiro font-mono font-black text-xl flex-shrink-0">${getMemberStats(activeMember).total}</span>
+                  <span className="text-sushiro font-mono font-black text-xl">${getMemberStats(activeMember).total}</span>
                 </div>
 
                 <section className="grid grid-cols-2 gap-4">
                   {PLATES.map(p => (
                     <PlateCounter key={p.id} plate={p} count={activeMember?.order[p.id] || 0}
-                      onIncrement={() => updateCount(p.id, 1)} onDecrement={() => updateCount(p.id, -1)} />
+                      onIncrement={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [p.id]: (m.order[p.id] || 0) + 1 } } : m))}
+                      onDecrement={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [p.id]: Math.max(0, (m.order[p.id] || 0) - 1) } } : m))}
+                    />
                   ))}
                 </section>
 
                 <section className="bg-white rounded-3xl p-5 shadow-sm border border-slate-200">
-                  <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
-                    <span className="w-1.5 h-6 sushiro-red rounded-full mr-2"></span>小食/特選
-                  </h2>
-                  <div className="space-y-2">
+                  <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center"><span className="w-1.5 h-6 sushiro-red rounded-full mr-2"></span>小食/手動</h2>
+                  <div className="space-y-4">
                     {OTHER_ITEMS.map(item => (
-                      <div key={item.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-2xl">
+                      <div key={item.id} className="flex items-center justify-between p-2 bg-slate-50 rounded-xl">
                         <span className="font-bold text-slate-700 text-sm">{item.name}</span>
                         <div className="flex items-center space-x-3">
-                          <button onClick={() => updateCount(item.id, -1)} className="w-8 h-8 border border-slate-300 rounded-full text-slate-400 flex items-center justify-center font-bold" disabled={!(activeMember?.order[item.id])}>-</button>
-                          <span className="font-mono font-bold w-4 text-center">{activeMember?.order[item.id] || 0}</span>
-                          <button onClick={() => updateCount(item.id, 1)} className="w-8 h-8 border border-slate-300 rounded-full text-slate-400 flex items-center justify-center font-bold">+</button>
+                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [item.id]: Math.max(0, (m.order[item.id] || 0) - 1) } } : m))} className="w-8 h-8 border border-slate-300 rounded-full text-slate-400 font-bold">-</button>
+                          <span className="font-mono font-bold">{activeMember?.order[item.id] || 0}</span>
+                          <button onClick={() => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, order: { ...m.order, [item.id]: (m.order[item.id] || 0) + 1 } } : m))} className="w-8 h-8 border border-slate-300 rounded-full text-slate-400 font-bold">+</button>
                         </div>
                       </div>
                     ))}
-                    
-                    <div className="mt-6 pt-4 border-t border-slate-100">
-                        <div className="flex items-center justify-between p-3 bg-white border-2 border-dashed border-slate-200 rounded-2xl">
-                            <div className="flex flex-col">
-                                <span className="font-black text-slate-900 text-xs">手動調整金額 ($)</span>
-                                <span className="text-[10px] text-slate-400">正數加錢 / 負數減錢</span>
-                            </div>
-                            <input 
-                                type="number" 
-                                value={activeMember?.customAmount || ''} 
-                                onChange={(e) => handleCustomAmountChange(parseFloat(e.target.value) || 0)}
-                                placeholder="0"
-                                className="w-24 px-3 py-2 bg-white rounded-xl text-right font-mono font-black text-black border border-slate-200 outline-none focus:border-sushiro focus:ring-1 focus:ring-sushiro"
-                                style={{ backgroundColor: 'white' }}
-                            />
-                        </div>
+                    <div className="flex items-center justify-between p-3 bg-white border-2 border-dashed border-slate-200 rounded-2xl">
+                      <span className="font-black text-slate-900 text-xs">手動調整 ($)</span>
+                      <input 
+                        type="number" 
+                        value={activeMember?.customAmount || ''} 
+                        onChange={(e) => setMembers(prev => prev.map(m => m.id === activeMemberId ? { ...m, customAmount: parseFloat(e.target.value) || 0 } : m))}
+                        placeholder="0"
+                        className="w-20 px-2 py-1 bg-white text-right font-mono font-black border border-slate-100 rounded-lg"
+                      />
                     </div>
                   </div>
                 </section>
@@ -327,85 +264,57 @@
 
               {showReceipt && (
                 <div className="fixed inset-0 z-[60] flex items-end justify-center bg-black/60 backdrop-blur-sm">
-                  <div className="bg-white w-full max-w-md rounded-t-[2.5rem] p-6 shadow-2xl max-h-[95vh] flex flex-col">
-                    <div className="flex justify-between items-center mb-4">
-                      <h3 className="text-2xl font-black">分單結算</h3>
-                      <button onClick={() => setShowReceipt(false)} className="p-2 bg-slate-100 rounded-full w-10 h-10 flex items-center justify-center">✕</button>
+                  <div className="bg-white w-full max-w-md rounded-t-[2.5rem] p-6 max-h-[90vh] flex flex-col">
+                    <div className="flex justify-between items-center mb-6">
+                      <h3 className="text-2xl font-black">結算單</h3>
+                      <button onClick={() => setShowReceipt(false)} className="w-10 h-10 bg-slate-100 rounded-full">✕</button>
                     </div>
-
-                    <div className="flex p-1 bg-slate-100 rounded-xl mb-6">
-                        <button onClick={() => setSplitEqually(false)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${!splitEqually ? 'bg-white shadow-sm text-sushiro' : 'text-slate-500'}`}>個別計算</button>
-                        <button onClick={() => setSplitEqually(true)} className={`flex-1 py-2 text-sm font-bold rounded-lg transition-all ${splitEqually ? 'bg-white shadow-sm text-sushiro' : 'text-slate-500'}`}>平均分賬</button>
-                    </div>
-                    
-                    <div className="flex-1 overflow-y-auto receipt-paper rounded-2xl border-2 border-slate-200 p-6 mb-6">
-                      {splitEqually ? (
-                        <div className="text-center py-8">
-                            <p className="text-slate-400 font-bold uppercase tracking-widest text-xs mb-2">Each Person Pays</p>
-                            <p className="text-6xl font-black text-sushiro font-mono mb-4">${totals.perPerson}</p>
-                            <div className="h-px bg-slate-200 w-full mb-4"></div>
-                            <div className="flex justify-between text-sm text-slate-500 font-bold"><span>總人數</span><span>{members.length} 位</span></div>
-                            <div className="flex justify-between text-sm text-slate-500 font-bold"><span>全枱總額</span><span>${totals.grandTotal}</span></div>
-                        </div>
-                      ) : (
-                        <div className="space-y-6">
-                          {totals.breakdowns.map((m) => (
-                            <div key={m.id} className="border-b border-slate-200 border-dotted pb-4 last:border-0">
-                              <div className="flex justify-between items-center mb-2">
-                                <span className="font-black text-slate-900 text-lg">{m.name}</span>
-                                <span className="font-black text-sushiro text-xl">${m.total}</span>
-                              </div>
-                              <div className="flex flex-wrap gap-2">
-                                {m.items.map((item, idx) => (
-                                    <span key={`${item.id}-${idx}`} className={`text-[10px] px-2 py-1 rounded-md font-bold ${item.isCustom ? 'bg-amber-100 text-amber-700 border border-amber-200' : 'bg-slate-100 text-slate-600'}`}>
-                                        {item.name} {item.isCustom ? `($${m.customAmount})` : `x${item.count}`}
-                                    </span>
-                                ))}
-                              </div>
-                              <p className="text-[10px] text-slate-400 mt-2 italic">含加一服務費: ${m.service}</p>
+                    <div className="flex-1 overflow-y-auto receipt-paper p-4 rounded-xl border border-slate-200">
+                        {totals.breakdowns.map(m => (
+                          <div key={m.id} className="mb-4 pb-4 border-b border-dotted border-slate-300">
+                            <div className="flex justify-between font-black text-lg"><span>{m.name}</span><span>${m.total}</span></div>
+                            <div className="text-[10px] text-slate-400 uppercase font-bold tracking-tighter">
+                              {m.items.map(i => `${i.name}x${i.count}`).join(', ')}
                             </div>
-                          ))}
-                          <div className="pt-4 mt-4 border-t-2 border-slate-900 border-dashed">
-                            <div className="flex justify-between text-xl font-black"><span>全枱總額</span><span>${totals.grandTotal}</span></div>
                           </div>
-                        </div>
-                      )}
+                        ))}
+                        <div className="pt-4 flex justify-between text-2xl font-black"><span>TOTAL</span><span>${totals.grandTotal}</span></div>
                     </div>
-                    
-                    <button onClick={handleCopy} className={`w-full py-4 rounded-2xl font-bold transition-all shadow-lg active:scale-95 ${copyFeedback ? 'bg-green-500 text-white' : 'bg-slate-900 text-white'}`}>
-                      {copyFeedback ? '已複製收據！' : '複製結算備忘'}
+                    <button onClick={() => {
+                        let text = "🍣 壽司郎結算單\n----------------\n";
+                        totals.breakdowns.forEach(m => text += `${m.name}: $${m.total}\n`);
+                        text += `----------------\n總額: $${totals.grandTotal}`;
+                        navigator.clipboard.writeText(text);
+                        setCopyFeedback(true); setTimeout(()=>setCopyFeedback(false), 2000);
+                    }} className={`mt-6 w-full py-4 rounded-2xl font-bold ${copyFeedback ? 'bg-green-500' : 'bg-slate-900'} text-white`}>
+                      {copyFeedback ? '已複製！' : '複製結算備忘'}
                     </button>
                   </div>
                 </div>
               )}
 
-              <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t p-4 shadow-lg z-40">
-                <div className="flex justify-between items-center px-2">
+              <footer className="fixed bottom-0 left-0 right-0 max-w-md mx-auto bg-white border-t p-4 shadow-lg z-40 flex justify-between items-center">
                   <div className="flex flex-col">
-                    <div className="flex items-center mb-1">
-                      <input type="checkbox" id="sc" checked={hasServiceCharge} onChange={e => setHasServiceCharge(e.target.checked)} className="mr-2 w-4 h-4 accent-sushiro" />
-                      <label htmlFor="sc" className="text-[10px] font-bold text-slate-400 uppercase">加一服務費</label>
+                    <div className="flex items-center text-[10px] font-bold text-slate-400 uppercase">
+                      <input type="checkbox" checked={hasServiceCharge} onChange={e => setHasServiceCharge(e.target.checked)} className="mr-1 accent-sushiro" /> 加一
                     </div>
                     <span className="text-3xl font-black text-sushiro font-mono">${totals.grandTotal}</span>
                   </div>
-                  <button onClick={() => setShowReceipt(true)} className="bg-slate-900 text-white px-8 py-3.5 rounded-2xl font-bold active:scale-95 transition-transform shadow-md">分單結算</button>
-                </div>
+                  <button onClick={() => setShowReceipt(true)} className="bg-slate-900 text-white px-8 py-3 rounded-2xl font-bold">分單結算</button>
               </footer>
             </div>
           );
         };
 
-        const container = document.getElementById('root');
-        const root = createRoot(container);
+        // 啟動 React
+        const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
 
+        // 保險機制：3秒後無論如何都隱藏加載屏
         setTimeout(() => {
           const loader = document.getElementById('loading-screen');
-          if(loader) {
-            loader.style.opacity = '0';
-            setTimeout(() => loader.remove(), 500);
-          }
-        }, 800);
+          if (loader) { loader.style.opacity = '0'; setTimeout(() => loader.remove(), 500); }
+        }, 3000);
     </script>
 </body>
 </html>
